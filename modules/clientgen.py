@@ -252,6 +252,10 @@ def start_build(cid):
     except ImportError:
         return False, 'pyzipper не установлен'
 
+    # перед новой сборкой удаляем старые дистрибутивы и архив
+    if cfg['artifact_dir'] and os.path.isdir(cfg['artifact_dir']):
+        shutil.rmtree(cfg['artifact_dir'], ignore_errors=True)
+
     platform = cfg.get('platform') or 'windows'
     version = cfg.get('version') or '1.4.9'
     filename = cfg['name']
@@ -502,20 +506,32 @@ def cleanup_temp_zips(uuid_val):
     return removed
 
 
+ARTIFACT_ZIP_NAME = 'build.zip'
+
+
 def artifact_zip(cid):
-    """Создаёт zip из артефактов и возвращает путь (или None)."""
+    """Создаёт zip из артефактов и возвращает путь (или None).
+
+    Если архив уже был подготовлен ранее — возвращается готовый файл
+    без повторной генерации (иначе build.zip запаковался бы сам в себя).
+    """
     cfg = get_config(cid)
     if not cfg or cfg['build_status'] != 'success':
         return None
     art = cfg['artifact_dir'] or _artifact_dir(cid)
     if not art or not os.path.isdir(art):
         return None
-    files = [f for f in os.listdir(art) if os.path.isfile(os.path.join(art, f)) and f != 'config.json']
+    zpath = os.path.join(art, ARTIFACT_ZIP_NAME)
+    # архив уже собран — отдаём его как есть, не пересоздавая
+    if os.path.isfile(zpath):
+        return zpath
+    files = [f for f in os.listdir(art)
+             if os.path.isfile(os.path.join(art, f))
+             and f not in ('config.json', ARTIFACT_ZIP_NAME)]
     if not files:
         return None
     if len(files) == 1:
         return os.path.join(art, files[0])
-    zpath = os.path.join(art, 'build.zip')
     with zipfile.ZipFile(zpath, 'w', zipfile.ZIP_DEFLATED) as z:
         for f in files:
             z.write(os.path.join(art, f), f)
